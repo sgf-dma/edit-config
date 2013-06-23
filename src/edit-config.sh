@@ -6,22 +6,49 @@ newline='
 '
 OIFS="$IFS"
 
+# Backup filename manipulation functions bkp_file_X().  All have the same
+# args:
+
+bkp_file_name()
+{
+    # Backup file name.
+    # Args: 1 - filename (with or without path does not matter).
+    # Stdout: backup file name.
+    echo "${1}.orig.$$"
+}
+
+bkp_file_rx()
+{
+    # Shell pattern to match backups of this file, created by different
+    # processes.
+    # Args: 1 - filename (with or without path does not matter).
+    # Stdout: shell pattern.
+    echo "${1}.orig.*"
+}
+
+bkp_file_pid()
+{
+    # PID of backup file creator's process.
+    # Args: 1 - backup filename (with or without path does not matter).
+    # Stdout: creator's PID.
+    echo "${1##*.}"
+}
+
+# FIXME: $PID reused?
 create_bkp()
 {
+    # 1 - file to backup.
     local f="$1"	    # Filename with path!
     local d="$(dirname "$f")"
-    # FIXME: $PID reused?
-    local bf="$f.orig.$$"   # Marking backup file with PID allows to check
-			    # whether its creator still running.
-    local nbf="$(basename "$bf")"
-    local bfs=''	     # Other backup files.
-    local b='' p='' c=''
-    bfs="$(find "$d" -maxdepth 1 -type f -name "${nbf%.*}*")"
+    local nf="$(basename "$f")"
+    local brx="$(bkp_file_rx "$nf")"
+    local bfs='' b='' p='' c=''
+    bfs="$(find "$d" -maxdepth 1 -type f -name "$brx")"
     if [ -n "$bfs" ]; then
 	echo "$0: Warning: Backup file(s) already exists."
 	IFS="$newline"
-	for b in $bfs; do   # Filename with path!
-	    p="${b##*.}"
+	for b in $bfs; do   # Filenames with path!
+	    p="$(bkp_file_pid "$b")"
 	    c="$(ps --no-heading -o cmd -p "$p" || true)"
 	    diff -s -u "$b" "$f" || true
 	    if [ -n "$c" ]; then
@@ -35,10 +62,17 @@ create_bkp()
 	IFS="$OIFS"
     else
 	echo "### Creating backup:"
-	cp -avT "$d/$f" "$d/$bf"
+	cp -avT "$f" "$(bkp_file_name "$f")"
+	sleep 60
     fi
 }
 
+ask_user()
+{
+    # 1 -prompt.
+    read -p -r reply
+
+}
 
 if [ $# -lt 1 ]; then
     echo "$0: Warning: No files to edit."
