@@ -15,15 +15,15 @@ create_bkp()
 			    # whether its creator still running.
     local nbf="$(basename "$bf")"
     local bfs=''	     # Other backup files.
-    local p='' c=''
+    local b='' p='' c=''
     bfs="$(find "$d" -maxdepth 1 -type f -name "${nbf%.*}*")"
     if [ -n "$bfs" ]; then
 	echo "$0: Warning: Backup file(s) already exists."
 	IFS="$newline"
 	for b in $bfs; do   # Filename with path!
 	    p="${b##*.}"
-	    c="$(ps --no-heading -o cmd -p "$p")"
-	    diff -u "$b" "$d/$f"
+	    c="$(ps --no-heading -o cmd -p "$p" || true)"
+	    diff -s -u "$b" "$f" || true
 	    if [ -n "$c" ]; then
 		echo "$0: Warning: Process '$c' with PID '$p', which created file '$b', still running."
 	    fi
@@ -53,7 +53,7 @@ if [ ! -f "$f" ]; then
     exit 1
 fi
 
-create_bkp
+create_bkp "$f"
 
 exit 0
 if create_bkp "$f"; then
