@@ -3,11 +3,12 @@
 # 'errexit', 'nounset', 'noglob'.
 set -euf
 
-newline='
+readonly newline='
 '
-OIFS="$IFS"
 #readonly save_pipe=8
 #readonly save_stdout=9
+readonly ps_e0="ERROR: $0"
+readonly ps_w0="Warning: $0"
 
 # Functions bkp_file_X() are basic operations on backup filename. When you
 # change format of backup file name, you must change _all_ these functons
@@ -42,7 +43,13 @@ bkp_file_pid()
 # FIXME: $PID reused?
 create_bkp()
 {
+    # Create backup file (also check whether it is already exist).
     # 1 - file to backup.
+    local OIFS="$IFS"
+    local func='create_bkp()'
+    local ps_e="$ps_e0: $func"
+    local ps_w="$ps_w0: $func"
+
     local f="$1"	    # Filename with path!
     local d="$(dirname "$f")"
     local nf="$(basename "$f")"
@@ -51,39 +58,56 @@ create_bkp()
     local reply=''
     # If you add more possible answers, add corresponding branch in `case`
     # below.
-    local user_answers='delete
-ignore'
+    local user_answers='yes
+no'
 
     bfs="$(find "$d" -maxdepth 1 -type f -name "$brx")"
     if [ -n "$bfs" ]; then
-	echo "$0: Warning: Backup file(s) already exists." 1>&2
+	echo "$ps_w: Backup file(s) already exists." 1>&2
 	IFS="$newline"
 	for b in $bfs; do   # Filenames with path!
 	    p="$(bkp_file_pid "$b")"
 	    c="$(ps --no-heading -o cmd -p "$p" || true)"
 	    diff -s -u "$b" "$f" || true
 	    if [ -n "$c" ]; then
-		echo "$0: Warning: Process '$c' with PID '$p', which created file '$b', still running." 1>&2
+		echo "$ps_e: Process '$c' with PID '$p', which created file '$b', still running." 1>&2
+		return 1
 	    fi
 	    IFS="$OIFS"	    # $bfs already expanded.
-	    reply="$(ask_user "## What should i do with backup file '$b'?" "$user_answers")" || return 1
+	    reply="$(ask_user "## What should i do with backup file '$b'?" \
+			      "$user_answers")" \
+		    || return 1
 	    case "$reply" in
 	      'delete' ) rm -v "$b" ;;
 	      'ignore' ) continue ;;
-	      * ) echo "$0: ERROR: No such answer '$reply'. Probably, this is missed 'case' branch." 1>&2
-		  exit 0
+	      * ) echo "$ps_e: No such answer: '$reply'. Probably, this is missed 'case' branch." 1>&2
+		  return 1
 		  ;;
 	    esac
 	done
-	# FIXME: If $IFS was changed (against $OIFS) before create_bkp() had
-	# called, this restores it to incorrect value. So, probably, run in
-	# subshell?
 	IFS="$OIFS"
-    else
-	b="$(bkp_file_name "$f")"
-	cp -avT "$f" "$b"
-	echo "$b"
     fi
+    b="$(bkp_file_name "$f")"
+    cp -avT "$f" "$b"
+    echo "$b"
+}
+
+rm_bkp()
+{
+    # 1 - file, which backup to remove.
+    local OIFS="$IFS"
+    local func='create_bkp()'
+    local ps_e="$ps_e0: $func"
+    local ps_w="$ps_w0: $func"
+
+    local f="$1"
+    local bf="$(bkp_file_name "$f")"
+    if [ ! -f "$bf" ]; then
+	echo "$ps_e: Backup file '$bf' does not exist."
+	return 1
+    fi
+    echo "Removing backup files."
+    rm -vi "$bf"
 }
 
 ask_user()
@@ -93,6 +117,11 @@ ask_user()
     # 1 - prompt.
     # 2 - all possible answers.
     # Stdout: matched answer (line) from possible answers list.
+    local OIFS="$IFS"
+    local func='ask_user()'
+    local ps_e="$ps_e0: $func"
+    local ps_w="$ps_w0: $func"
+
     local p="$1"
     # Add 'quit' and ensure, that there is no duplicates, because replies
     # matching more, than one answer, are not accepted.
@@ -118,15 +147,16 @@ ask_user()
 			| grep -nFx -e "$reply"     \
 		    || true
 		)"
+
 	if [ -z "$res" ]; then
-	    echo "$0: No one matches." 1>&2
+	    echo "No one matches." 1>&2
 	elif [ "$(echo -n "$res" | wc -l)" != 0 ]; then
-	    echo "$0: More, than one matches." 1>&2
+	    echo "More, than one matches." 1>&2
 	    continue
 	else
 	    res="$(echo "$xs" | sed -ne "${res%%:*}p;")"
 	    if [ "$res" = 'quit' ]; then
-		echo "$0: Quit.." 1>&2
+		echo "Quit.." 1>&2
 		return 1
 	    else
 		echo "$res"
@@ -136,8 +166,13 @@ ask_user()
     done
 }
 
+OIFS="$IFS"
+func='main()'
+ps_e="$ps_e0: $func"
+ps_w="$ps_w0: $func"
+
 if [ $# -lt 1 ]; then
-    echo "$0: Warning: No files to edit."
+    echo "$ps_w: No files to edit."
     exit 0
 fi
 
@@ -145,11 +180,28 @@ f="$1"
 
 # Symlink to file matches with '-f' as well.
 if [ ! -f "$f" ]; then
-    echo "$0: ERROR: Not a regular file."
+    echo "$ps_e: Not a regular file."
     exit 1
 fi
 
 create_bkp "$f"
+cmd="$(command -v "${EDITOR:-}" || true)"
+if [ -z "$cmd" ]; then
+    cmd="$(command -v vim)"
+    if [ -z "$cmd" ]; then
+	cmd="$(command -v vi)"
+    fi
+fi
+#cmd="$(command -v ls)"
+cmd="ls -l"
+if [ -x "$cmd" ]; then
+    "$cmd" "$f"
+else
+    echo "$ps_e: Can't execute editor."
+    rm_bkp "$f"
+    exit 1
+fi
+    
 exit 0
 
 if create_bkp "$f"; then
