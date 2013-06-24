@@ -17,6 +17,10 @@ readonly ps_w0="Warning: $0"
 # change format of backup file name, you must change _all_ these functons
 # accordingly.
 
+# Note about symlinks:
+# 1. I make backup of file, pointed by symlink, into symlink's directory.
+# 2. When restoring, i overwrite file pointed by symlink, not a symlink.
+
 bkp_file_name()
 {
     # Backup file name.
@@ -88,7 +92,7 @@ no'
         IFS="$OIFS"
     fi
     b="$(bkp_file_name "$f")"
-    cp -avT "$f" "$b"
+    cp -vLT --preserve=all "$f" "$b"
     eval "exec 1>&$save_pipe $save_pipe>&-"
     echo "$b"
 }
@@ -176,10 +180,6 @@ no
 retry'
 
 eval "exec $save_stdout>&1"
-
-# FIXME: Symlinks:
-#   1. Ensure, that i made backup of file, not symlink.
-#   2. Ensure, that backup overwritesfile pointed by symlink, not a symlink.
 
 
 # Symlink to file matches with '-f' as well.
