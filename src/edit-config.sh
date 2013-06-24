@@ -1,12 +1,15 @@
 #!/bin/sh
 
-# 'errexit', 'nounset', 'noglob'.
+# 'errexit': i assume immediate exit, when 1 is returned, in several places.
+# 'nounset': i don't check args count.
+# 'noglob': just to be sure, that `IFS="$newline" $()` does not run pathname
+# expansion on result.
 set -euf
 
 readonly newline='
 '
-#readonly save_pipe=8
-#readonly save_stdout=9
+readonly save_pipe=7
+readonly save_stdout=9
 readonly ps_e0="ERROR: $0"
 readonly ps_w0="Warning: $0"
 
@@ -44,7 +47,7 @@ bkp_file_pid()
 
 
 # FIXME: $PID reused?
-# NOTE: Do not write to stdout in create_bkp() (only to stderr).
+# NOTE NOTE NOTE: ask_user() MUST run in subshell because it moves FDs.
 create_bkp()
 {
     # Create backup file (also check whether it is already exist).
@@ -66,34 +69,36 @@ create_bkp()
     local user_answers='yes
 no'
 
+    eval "exec $save_pipe>&1 1>&$save_stdout"
     bfs="$(find "$d" -maxdepth 1 -type f -name "$brx")"
     if [ -n "$bfs" ]; then
-        echo "$ps_w: One or more backup file already exists." 1>&2
+        echo "$ps_w: One or more backup file already exists."
         IFS="$newline"
         for b in $bfs; do   # Filenames with path!
             p="$(bkp_file_pid "$b")"
             c="$(ps --no-heading -o cmd -p "$p" || true)"
-            diff -s -u "$b" "$f" 1>&2 || true
+            diff -s -u "$b" "$f" || true
             if [ -n "$c" ]; then
-                echo "$ps_e: Process '$c' with PID '$p', which created file '$b', still running." 1>&2
+                echo "$ps_e: Process '$c' with PID '$p', which created file '$b', still running."
                 return 1
             fi
-            echo "Remove backup file '$b'?" 1>&2
-            rm -vi "$b" 1>&2
+            echo "Remove backup file '$b'?"
+            rm -vi "$b"
         done
         IFS="$OIFS"
     fi
     b="$(bkp_file_name "$f")"
-    cp -avT "$f" "$b" 1>&2
+    cp -avT "$f" "$b"
+    eval "exec 1>&$save_pipe $save_pipe>&-"
     echo "$b"
 }
 
-# FIXME: Use eval-exec to avoid 1>&2 on each line!
-# NOTE: Do not write to stdout in ask_user() (only to stderr).
+# NOTE NOTE NOTE: ask_user() MUST run in subshell because it moves FDs.
 ask_user()
 {
-    # Ask user and match reply as prefix against list of correct answers. Quit
-    # answer added to all prompts and processed here.
+    # Ask user and match reply as prefix against list of correct answers.
+    # Also 'quit' answer added to all prompts and processed here. In that
+    # case ask_user() returns 1 and assumes script to exit immediately.
     # 1 - prompt.
     # 2 - all possible answers.
     # Stdout: whole matched answer from possible answers list.
@@ -106,6 +111,7 @@ ask_user()
     local xs="$2"
     local reply=''
 
+    eval "exec $save_pipe>&1 1>&$save_stdout"
     # Ensure, that there is no duplicates, because replies matching more, than
     # one answer, are not accepted. Because i should not change answers order,
     # i first number them, then sort and filter (for uniqueness) by rest of
@@ -139,32 +145,27 @@ ask_user()
                 )"
 
         if [ -z "$res" ]; then
-            echo "No one matches." 1>&2
+            echo "No one matches."
         elif [ "$(echo -n "$res" | wc -l)" != 0 ]; then
-            echo "More, than one matches." 1>&2
-            continue
+            echo "More, than one matches."
         else
             res="$(echo "$xs" | sed -ne "${res%%:*}p;")"
             if [ "$res" = 'quit' ]; then
-                echo "Quit.." 1>&2
+                echo "Quit.."
                 return 1
             else
-                echo "$res"
                 break
             fi
         fi
     done
+    eval "exec 1>&$save_pipe $save_pipe>&-"
+    echo "$res"
 }
 
 OIFS="$IFS"
 func='main()'
 ps_e="$ps_e0: $func"
 ps_w="$ps_w0: $func"
-
-if [ $# -lt 1 ]; then
-    echo "$ps_w: No files to edit."
-    exit 0
-fi
 
 ### main() .
 ret=0
@@ -173,6 +174,8 @@ bf=''   # I will obtain backup file name from create_bkp() .
 user_answers='yes
 no
 retry'
+
+eval "exec $save_stdout>&1"
 
 # FIXME: Symlinks:
 #   1. Ensure, that i made backup of file, not symlink.
@@ -207,7 +210,7 @@ if [ -x "$cmd" ]; then
             mv -vi "$bf" "$(readlink -f "$f")"
             ;;
           * )
-            echo "$ps_e: No such answer: '$reply'. Probably, this is missed 'case' branch." 1>&2
+            echo "$ps_e: No such answer: '$reply'. Probably, this is missed 'case' branch."
             ret=1
             ;;
         esac
