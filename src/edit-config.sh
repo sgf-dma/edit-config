@@ -74,12 +74,14 @@ no'
 		return 1
 	    fi
 	    IFS="$OIFS"	    # $bfs already expanded.
-	    reply="$(ask_user "## What should i do with backup file '$b'?" \
+            # FIXME: May be just use `rm -i` ? But in that case, i can't
+            # hadnle 'quit' here..
+	    reply="$(ask_user "## Remove backup file '$b'?" \
 			      "$user_answers")" \
 		    || return 1
 	    case "$reply" in
-	      'delete' ) rm -v "$b" ;;
-	      'ignore' ) continue ;;
+	      'yes' ) rm -v "$b" ;;
+	      'no' ) continue ;;
 	      * ) echo "$ps_e: No such answer: '$reply'. Probably, this is missed 'case' branch." 1>&2
 		  return 1
 		  ;;
@@ -106,7 +108,7 @@ rm_bkp()
 	echo "$ps_e: Backup file '$bf' does not exist."
 	return 1
     fi
-    echo "Removing backup files."
+    echo "Removing backup file '$bf'.."
     rm -vi "$bf"
 }
 
@@ -116,26 +118,36 @@ ask_user()
     # answer added to all prompts and processed here.
     # 1 - prompt.
     # 2 - all possible answers.
-    # Stdout: matched answer (line) from possible answers list.
+    # Stdout: whole matched answer from possible answers list.
     local OIFS="$IFS"
     local func='ask_user()'
     local ps_e="$ps_e0: $func"
     local ps_w="$ps_w0: $func"
 
     local p="$1"
-    # Add 'quit' and ensure, that there is no duplicates, because replies
-    # matching more, than one answer, are not accepted.
-    local xs="$(echo "$2${newline}quit" | sort -u)"
+    local xs="$2"
     local reply=''
+
+    # Ensure, that there is no duplicates, because replies matching more, than
+    # one answer, are not accepted. Because i should not change answers order,
+    # i first number them, then sort and filter (for uniqueness) by rest of
+    # line and finally remove numbers.
+    xs="$(echo "$xs"		    \
+	    | nl -n rz -s:	    \
+	    | sort -s -u -t: -k2,2  \
+	    | sort -k1,1	    \
+	    | sed -e's/^[^:]\+://; /quit/Id;'
+	)${newline}quit"
 
     # Join answers into one line and add to the prompt.
     p="$p ($(echo "$xs" | sed -ne 'H; ${ x; s/\n//; s/\n/, /gp; };')): "
     while [ 0 ]; do
 	read -r -p "$p" reply
-	# If reply contains grep's special character result will be
-	# unpredictable, so i use `grep -F`: for prefix match i need to first
-	# truncate all answers to reply length and then match whole line.
-	# Because `cut -c` works on bytes (not characters), i use `sed`.
+
+        # If reply contains grep's special character result will be
+        # unpredictable, so i use `grep -F`. For prefix match i need to first
+        # truncate all answers to reply length and then match whole line.
+        # Because `cut -c` works on bytes (not characters), i use `sed`.
 	if [ -z "$reply" ]; then
 	    continue
 	fi
