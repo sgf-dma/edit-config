@@ -68,29 +68,18 @@ no'
 
     bfs="$(find "$d" -maxdepth 1 -type f -name "$brx")"
     if [ -n "$bfs" ]; then
-        echo "$ps_w: Backup file(s) already exists." 1>&2
+        echo "$ps_w: One or more backup file already exists." 1>&2
         IFS="$newline"
         for b in $bfs; do   # Filenames with path!
             p="$(bkp_file_pid "$b")"
             c="$(ps --no-heading -o cmd -p "$p" || true)"
-            diff -s -u "$b" "$f" || true
+            diff -s -u "$b" "$f" 1>&2 || true
             if [ -n "$c" ]; then
                 echo "$ps_e: Process '$c' with PID '$p', which created file '$b', still running." 1>&2
                 return 1
             fi
-            IFS="$OIFS"     # $bfs already expanded.
-            # FIXME: May be just use `rm -i` ? But in that case, i can't
-            # hadnle 'quit' here..
-            reply="$(ask_user "## Remove backup file '$b'?" 
-                              "$user_answers")" \
-                        || return 1
-            case "$reply" in
-              'yes' ) rm -v "$b" 1>&2 ;;
-              'no' ) continue ;;
-              * ) echo "$ps_e: No such answer: '$reply'. Probably, this is missed 'case' branch." 1>&2
-                  return 1
-                  ;;
-            esac
+            echo "Remove backup file '$b'?" 1>&2
+            rm -vi "$b" 1>&2
         done
         IFS="$OIFS"
     fi
@@ -99,26 +88,7 @@ no'
     echo "$b"
 }
 
-# FIXME: retab.
-# FIXME: This functions is trivial. Delete it?
-rm_bkp()
-{
-    # 1 - file, which backup to remove.
-    local OIFS="$IFS"
-    local func='create_bkp()'
-    local ps_e="$ps_e0: $func"
-    local ps_w="$ps_w0: $func"
-
-    local f="$1"
-    local bf="$(bkp_file_name "$f")"
-    if [ ! -f "$bf" ]; then
-        echo "$ps_e: Backup file '$bf' does not exist."
-        return 1
-    fi
-    echo "Removing backup file '$bf'.."
-    rm -vi "$bf"
-}
-
+# FIXME: Use eval-exec to avoid 1>&2 on each line!
 # NOTE: Do not write to stdout in ask_user() (only to stderr).
 ask_user()
 {
@@ -196,6 +166,8 @@ if [ $# -lt 1 ]; then
     exit 0
 fi
 
+### main() .
+ret=0
 f="$1"
 bf=''   # I will obtain backup file name from create_bkp() .
 user_answers='yes
@@ -225,35 +197,29 @@ cmd="$(command -v ls)"
 if [ -x "$cmd" ]; then
     while [ 0 ]; do
         "$cmd" "$f"
-        diff -u "$bf" "$f"
-        reply="$(ask_user "## Accept changes?" "$user_answers")" || return 1
+        diff -s -u "$bf" "$f" || true
+        reply="$(ask_user "## Accept changes?" "$user_answers")" || exit 1
         case "$reply" in
-          'yes' ) rm_bkp "$f" ;;
+          'retry' ) continue ;;
+          'yes' ) : ;;
           'no' )
             echo "Restoring backup file '$bf'."
             mv -vi "$bf" "$(readlink -f "$f")"
             ;;
-          'retry' ) continue ;;
           * )
             echo "$ps_e: No such answer: '$reply'. Probably, this is missed 'case' branch." 1>&2
-            return 1
+            ret=1
             ;;
         esac
+        break
     done
 else
     echo "$ps_e: Can't execute editor."
-    rm_bkp "$f"
-    exit 1
+    ret=1
 fi
-    
-exit 0
 
-if create_bkp "$f"; then
-    # Is this process still running.
-    # If yesShow diff.
-    # Ask what to do: delete 
-else
-    # Call editor.
-    # Generate diff (and save).
-    # Show diff to user and ask what to do: save, retry, discard.
-fi
+echo "Removing backup file '$bf'.."
+rm -vfi "$bf"
+
+exit $ret
+
