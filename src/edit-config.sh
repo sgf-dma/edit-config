@@ -55,7 +55,7 @@ create_bkp()
     local ps_e="$ps_e0: $func"
     local ps_w="$ps_w0: $func"
 
-    local f="$1"	    # Filename with path!
+    local f="$1"            # Filename with path!
     local d="$(dirname "$f")"
     local nf="$(basename "$f")"
     local brx="$(bkp_file_rx "$nf")"
@@ -68,31 +68,31 @@ no'
 
     bfs="$(find "$d" -maxdepth 1 -type f -name "$brx")"
     if [ -n "$bfs" ]; then
-	echo "$ps_w: Backup file(s) already exists." 1>&2
-	IFS="$newline"
-	for b in $bfs; do   # Filenames with path!
-	    p="$(bkp_file_pid "$b")"
-	    c="$(ps --no-heading -o cmd -p "$p" || true)"
-	    diff -s -u "$b" "$f" || true
-	    if [ -n "$c" ]; then
-		echo "$ps_e: Process '$c' with PID '$p', which created file '$b', still running." 1>&2
-		return 1
-	    fi
-	    IFS="$OIFS"	    # $bfs already expanded.
+        echo "$ps_w: Backup file(s) already exists." 1>&2
+        IFS="$newline"
+        for b in $bfs; do   # Filenames with path!
+            p="$(bkp_file_pid "$b")"
+            c="$(ps --no-heading -o cmd -p "$p" || true)"
+            diff -s -u "$b" "$f" || true
+            if [ -n "$c" ]; then
+                echo "$ps_e: Process '$c' with PID '$p', which created file '$b', still running." 1>&2
+                return 1
+            fi
+            IFS="$OIFS"     # $bfs already expanded.
             # FIXME: May be just use `rm -i` ? But in that case, i can't
             # hadnle 'quit' here..
             reply="$(ask_user "## Remove backup file '$b'?" 
                               "$user_answers")" \
                         || return 1
-	    case "$reply" in
-	      'yes' ) rm -v "$b" 1>&2 ;;
-	      'no' ) continue ;;
-	      * ) echo "$ps_e: No such answer: '$reply'. Probably, this is missed 'case' branch." 1>&2
-		  return 1
-		  ;;
-	    esac
-	done
-	IFS="$OIFS"
+            case "$reply" in
+              'yes' ) rm -v "$b" 1>&2 ;;
+              'no' ) continue ;;
+              * ) echo "$ps_e: No such answer: '$reply'. Probably, this is missed 'case' branch." 1>&2
+                  return 1
+                  ;;
+            esac
+        done
+        IFS="$OIFS"
     fi
     b="$(bkp_file_name "$f")"
     cp -avT "$f" "$b" 1>&2
@@ -112,8 +112,8 @@ rm_bkp()
     local f="$1"
     local bf="$(bkp_file_name "$f")"
     if [ ! -f "$bf" ]; then
-	echo "$ps_e: Backup file '$bf' does not exist."
-	return 1
+        echo "$ps_e: Backup file '$bf' does not exist."
+        return 1
     fi
     echo "Removing backup file '$bf'.."
     rm -vi "$bf"
@@ -140,49 +140,49 @@ ask_user()
     # one answer, are not accepted. Because i should not change answers order,
     # i first number them, then sort and filter (for uniqueness) by rest of
     # line and finally remove numbers.
-    xs="$(echo "$xs"		    \
-	    | nl -n rz -s:	    \
-	    | sort -s -u -t: -k2,2  \
-	    | sort -k1,1	    \
-	    | sed -e's/^[^:]\+://; /quit/Id;'
-	)${newline}quit"
+    xs="$(echo "$xs"                \
+            | nl -n rz -s:          \
+            | sort -s -u -t: -k2,2  \
+            | sort -k1,1            \
+            | sed -e's/^[^:]\+://; /quit/Id;'
+        )${newline}quit"
 
     # Join answers into one line and add to the prompt.
     p="$p ($(echo "$xs" | sed -ne 'H; ${ x; s/\n//; s/\n/, /gp; };')): "
     while [ 0 ]; do
-	read -r -p "$p" reply
+        read -r -p "$p" reply
 
         # If reply contains grep's special character result will be
         # unpredictable, so i use `grep -F`. For prefix match i need to first
         # truncate all answers to reply length and then match whole line.
         # Because `cut -c` works on bytes (not characters), i use `sed`.
-	if [ -z "$reply" ]; then
-	    continue
-	fi
-	l="$(echo "$reply" | wc -m)"	# length + 1 (due to newline)
-	# Below i replace (length + 1) character with newline and print only
-	# first line.
-	res="$(echo "$xs"			    \
-			| sed -e "s/./\n/$l; P; d;" \
-			| grep -nFx -e "$reply"     \
-		    || true
-		)"
+        if [ -z "$reply" ]; then
+            continue
+        fi
+        l="$(echo "$reply" | wc -m)"    # length + 1 (due to newline)
+        # Below i replace (length + 1) character with newline and print only
+        # first line.
+        res="$(echo "$xs"                           \
+                        | sed -e "s/./\n/$l; P; d;" \
+                        | grep -nFx -e "$reply"     \
+                    || true
+                )"
 
-	if [ -z "$res" ]; then
-	    echo "No one matches." 1>&2
-	elif [ "$(echo -n "$res" | wc -l)" != 0 ]; then
-	    echo "More, than one matches." 1>&2
-	    continue
-	else
-	    res="$(echo "$xs" | sed -ne "${res%%:*}p;")"
-	    if [ "$res" = 'quit' ]; then
-		echo "Quit.." 1>&2
-		return 1
-	    else
-		echo "$res"
-		break
-	    fi
-	fi
+        if [ -z "$res" ]; then
+            echo "No one matches." 1>&2
+        elif [ "$(echo -n "$res" | wc -l)" != 0 ]; then
+            echo "More, than one matches." 1>&2
+            continue
+        else
+            res="$(echo "$xs" | sed -ne "${res%%:*}p;")"
+            if [ "$res" = 'quit' ]; then
+                echo "Quit.." 1>&2
+                return 1
+            else
+                echo "$res"
+                break
+            fi
+        fi
     done
 }
 
@@ -197,7 +197,7 @@ if [ $# -lt 1 ]; then
 fi
 
 f="$1"
-bf=''   # I will learn backup file name from create_bkp() .
+bf=''   # I will obtain backup file name from create_bkp() .
 user_answers='yes
 no
 retry'
@@ -218,7 +218,7 @@ cmd="$(command -v "${EDITOR:-}" || true)"
 if [ -z "$cmd" ]; then
     cmd="$(command -v vim)"
     if [ -z "$cmd" ]; then
-	cmd="$(command -v vi)"
+        cmd="$(command -v vi)"
     fi
 fi
 cmd="$(command -v ls)"
