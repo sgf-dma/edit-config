@@ -38,19 +38,16 @@ bkp_file_rx()
     echo "${1}.orig.*"
 }
 
-# FIXME: I should check whether creator is runninh here instead of telling
-# creator's PID to everyone, because when mark will change from PID to
-# something else all PID relevant code will break.
-bkp_file_pid()
+# FIXME: May be check 'cmd' as well? Because PIDs may be reused.
+is_bkp_creator_alive()
 {
-    # PID of backup file creator's process.
+    # Check, whether backup file creator's process still alive.
     # Args: 1 - backup filename (with or without path does not matter).
-    # Stdout: creator's PID.
-    echo "${1##*.}"
+    # Stdout: creator's process PID, if it is still running, and nothing
+    # otheriwse.
+    ps --no-heading -o pid:1 -p "${1##*.}" || true
 }
 
-
-# FIXME: $PID reused?
 # NOTE NOTE NOTE: ask_user() MUST run in subshell because it moves FDs.
 create_bkp()
 {
@@ -66,7 +63,7 @@ create_bkp()
     local d="$(dirname "$f")"
     local nf="$(basename "$f")"
     local brx="$(bkp_file_rx "$nf")"
-    local bfs='' b='' p='' c=''
+    local bfs='' b='' p=''
     local reply=''
     # If you add more possible answers, add corresponding branch in `case`
     # below.
@@ -79,19 +76,20 @@ no'
         echo "$ps_w: One or more backup file already exists."
         IFS="$newline"
         for b in $bfs; do   # Filenames with path!
-            p="$(bkp_file_pid "$b")"
-            c="$(ps --no-heading -o cmd -p "$p" || true)"
-            diff -s -u "$b" "$f" || true
-            if [ -n "$c" ]; then
-                echo "$ps_e: Process '$c' with PID '$p', which created file '$b', still running."
+            echo "Found backup file '$b'."
+            p="$(is_bkp_creator_alive "$b")"
+            # If creator still running, someone else may edit this same file.
+            if [ -n "$p" ]; then
+                echo "$ps_e: Process with PID '$p', which created file '$b', still running."
                 return 1
             fi
-            echo "Remove backup file '$b'?"
+            diff -s -u "$b" "$f" || true
             rm -vi "$b"
         done
         IFS="$OIFS"
     fi
     b="$(bkp_file_name "$f")"
+    echo "Create new backup file '$b'."
     cp -vLT --preserve=all "$f" "$b"
     eval "exec 1>&$save_pipe $save_pipe>&-"
     echo "$b"
